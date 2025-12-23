@@ -109,16 +109,16 @@ rename_photos_with_geocoding <- function(
   }
   
   # -----------------------------
-  # 2) Extract fields
+  # 2) Extract fields (robust to missing GPS columns)
   # -----------------------------
   df <- meta %>%
-    select(SourceFile, DateTimeOriginal, GPSLatitude, GPSLongitude) %>%
+    dplyr::select(dplyr::any_of(c("SourceFile", "DateTimeOriginal", "GPSLatitude", "GPSLongitude"))) %>%
     mutate(
-      DateTimeOriginal = ifelse(is.na(DateTimeOriginal) | DateTimeOriginal == "",
-                                NA_character_, DateTimeOriginal),
-      GPSLatitude  = ifelse(is.na(GPSLatitude),  NA, GPSLatitude),
-      GPSLongitude = ifelse(is.na(GPSLongitude), NA, GPSLongitude)
+      DateTimeOriginal = ifelse(is.na(DateTimeOriginal) | DateTimeOriginal == "", NA_character_, DateTimeOriginal),
+      GPSLatitude  = if ("GPSLatitude"  %in% names(.)) as.numeric(GPSLatitude)  else NA_real_,
+      GPSLongitude = if ("GPSLongitude" %in% names(.)) as.numeric(GPSLongitude) else NA_real_
     )
+  
   
   # -----------------------------
   # 3) Parse datetime + derive year/date/time
@@ -184,8 +184,10 @@ rename_photos_with_geocoding <- function(
     df_to_process <- df_to_process %>%
       left_join(df_geo %>% select(SourceFile, place_name), by = "SourceFile")
   } else {
+    # No GPS in this batch -> no geocoding attempted
     df_to_process$place_name <- NA_character_
   }
+  
   
   # -----------------------------
   # 6) Clean place name
@@ -378,8 +380,8 @@ rename_photos_with_geocoding <- function(
 # Example usage
 # ---------------------------------------------------------
 # Dropbox ingest
- result_dropbox <- rename_photos_with_geocoding(
-   old_folder = "./Example",
+result_dropbox <- rename_photos_with_geocoding(
+   old_folder = "./DropBox",
    new_folder = "./Out",
    dry_run = FALSE
  )
@@ -390,3 +392,35 @@ rename_photos_with_geocoding <- function(
 #   new_folder = "./Archive",
 #   dry_run = FALSE
 # )
+
+
+
+library(exifr)
+
+has_gps <- function(file) {
+  m <- read_exif(file, tags = c("GPSLatitude", "GPSLongitude"), quiet = TRUE)
+  if (nrow(m) == 0) return(FALSE)
+  all(c("GPSLatitude","GPSLongitude") %in% names(m)) &&
+    !is.na(m$GPSLatitude[1]) && !is.na(m$GPSLongitude[1]) &&
+    m$GPSLatitude[1] != "" && m$GPSLongitude[1] != ""
+}
+
+has_gps(".DropBox/2011-01-11 16.38.37.jpg")
+
+#Examine MetaData
+
+library(exifr)
+
+photo <- "DropBox/2011-01-11 16.38.37.jpg"
+
+
+
+meta_one <- read_exif(
+  path  = photo,
+  quiet = TRUE
+)
+
+str(meta_one)
+
+
+
